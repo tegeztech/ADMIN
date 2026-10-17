@@ -118,6 +118,20 @@ input,textarea{border-radius:12px;background:#fbfcfe}
 .dbtn:disabled{opacity:.5}
 .gate{background:#fff;border-radius:18px;padding:18px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 8px 20px -8px rgba(16,24,40,.18);display:grid;gap:12px}
 .gate p{margin:0;color:var(--mut);font-size:13px;line-height:1.4}
+#nsug{position:fixed;right:auto;z-index:60;padding:4px;box-sizing:border-box;overscroll-behavior:contain}
+.si.ns{gap:10px;padding:9px 10px}.si .nn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.si .nn.nw{color:#15803d;font-weight:800}
+.db{flex:none;display:inline-flex;align-items:baseline;gap:5px;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700;white-space:nowrap;line-height:1.35}
+.db small{font-size:10.5px;font-weight:600;opacity:.9}
+.db.r{background:#ef4444;color:#fff}.db.o{background:#f97316;color:#fff}.db.y{background:#fde047;color:#5b4204}.db.g{background:#22c55e;color:#fff}
+.db.b{background:#8b5a2b;color:#fff}.db.nv{background:#dcfce7;color:#15803d}
+.kz{font-size:10px;font-weight:700;color:#64748b;background:#eef2f6;border-radius:999px;padding:1px 7px;margin-left:5px;vertical-align:1px}
+.hnt{margin:0 2px 10px;font-size:12.5px;line-height:1.4;color:var(--mut)}
+.srv{background:#fff;border-radius:18px;margin:0 0 14px;padding:4px 14px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 8px 20px -8px rgba(16,24,40,.18)}
+.srv summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:15px;padding:12px 0;list-style:none}.srv summary::-webkit-details-marker{display:none}
+.srv summary small{margin-left:auto;font-weight:600;font-size:11.5px;color:var(--mut)}
+.srv-b{display:grid;gap:10px;padding:0 0 14px}
+.srv code{display:block;word-break:break-all;font-size:11.5px;line-height:1.4;background:#f1f5f9;border-radius:10px;padding:9px 10px;color:#334155}
 </style>
 </head>
 <body>
@@ -164,8 +178,18 @@ input,textarea{border-radius:12px;background:#fbfcfe}
   <div id="list"></div>
 </main>
 <section id="settings" class="wrap">
+  <details class="srv" id="srv"><summary><svg class="i"><use href="#i-ref"/></svg> Szerver kapcsolat (Apps Script URL)<small id="srv-src"></small></summary>
+    <div class="srv-b">
+      <div><div class="lb">Jelenleg használt URL</div><code id="srv-cur"></code></div>
+      <label class="f" id="srv-f"><span class="lb">Új alkalmazás URL (…/exec végű)</span><span class="er">Az URL formátuma: https://script.google.com/macros/s/…/exec</span><span class="ib"><input id="srv-in" type="url" inputmode="url" autocapitalize="off" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" onkeydown="if(event.key==='Enter')srvSave()"></span></label>
+      <div class="pcb"><button class="save" id="srv-b" onclick="srvSave()"><svg class="i"><use href="#i-check"/></svg> Tesztelés és mentés</button><button class="dbtn" onclick="srvReset()">Alaphelyzet</button></div>
+      <div class="smsg" id="srv-msg"></div>
+      <p class="hnt">Mentéskor az URL ezen az eszközön is érvénybe lép, és a szkript beírja a Google Táblázat „Beallitas” lapjára is. A civil oldal minden indulásnál onnan olvassa be az aktuális címet (a közzétett lap frissülése akár néhány percet is késhet).</p>
+    </div>
+  </details>
   <div id="plw">
     <div class="sh"><h2>Személyek</h2><span class="status" id="pcount" style="flex:none"></span></div>
+    <p class="hnt"><b>Csak kézi:</b> az ilyen személy nem kerül be az automata beosztásba, de a beosztási mezőkben kézzel bárhová beírható.</p>
     <div class="smsg" id="pmsg"></div>
     <div id="pnew"></div>
     <div id="plist"></div>
@@ -173,9 +197,24 @@ input,textarea{border-radius:12px;background:#fbfcfe}
   </div>
 </section>
 <datalist id="dl-h"></datalist><datalist id="dl-v"></datalist>
+<div id="nsug" class="sug"></div>
 
 <script>
-const scriptURL='https://script.google.com/macros/s/AKfycbx_4lLmU8AFwZN_HITmVGtDuE_w5867Yx6iukoroUdD5H4N9c078UjT2h11veDjnWzY-w/exec';
+const DEFAULT_URL='https://script.google.com/macros/s/AKfycbx_4lLmU8AFwZN_HITmVGtDuE_w5867Yx6iukoroUdD5H4N9c078UjT2h11veDjnWzY-w/exec';
+/* Opcionális közös beállítás: a Google Táblázat „Közzététel az internetre” CSV-linkje, amelyben szerepel az aktuális …/exec URL.
+   Ha ez ki van töltve, az app induláskor onnan veszi át az új URL-t, így új üzembe helyezésnél nem kell a kódot átírni. */
+const CONFIG_CSV='';
+const UK='tt_api_url',UC='tt_api_url_cfg',URL_RE=/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/;
+let scriptURL=DEFAULT_URL,URL_SRC='beépített';
+try{const o=localStorage.getItem(UK),c=CONFIG_CSV&&localStorage.getItem(UC);if(o&&URL_RE.test(o)){scriptURL=o;URL_SRC='kézi beállítás'}else if(c&&URL_RE.test(c)){scriptURL=c;URL_SRC='táblázatból'}}catch(e){}
+async function syncUrl(){
+  if(!CONFIG_CSV||URL_SRC==='kézi beállítás')return;
+  try{const to=ms=>new Promise((_,j)=>setTimeout(()=>j(0),ms)),
+      t=await Promise.race([fetch(CONFIG_CSV+(CONFIG_CSV.includes('?')?'&':'?')+'t='+Date.now()).then(r=>r.text()),to(4000)]),m=String(t).match(URL_RE);
+    if(m&&m[0]!==scriptURL){const p=await Promise.race([fetch(m[0]+'?action=ping').then(r=>r.json()),to(6000)]);
+      if(p&&p.ok){scriptURL=m[0];URL_SRC='táblázatból';try{localStorage.setItem(UC,m[0])}catch(e){}}}
+    else if(m)URL_SRC='táblázatból'}catch(e){}
+}
 const CK='tt_admin_cache',NK='tt_admin_names';
 const $=id=>document.getElementById(id);
 const ico=n=>`<svg class="i"><use href="#i-${n}"/></svg>`;
@@ -183,12 +222,12 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const pad=n=>String(n).padStart(2,'0');
 const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; /* helyi dátum, NEM toISOString (az UTC-re vált és elcsúsztatja a napot) */
 const fm=d=>d.toLocaleDateString('hu-HU',{month:'short',day:'numeric'});
-let names={h:[],v:[]},namesOk=false,synced=false;
+let names={h:[],v:[]},namesOk=false,synced=false,SHEET=[],nsInp=null,KEZI=new Set();
 const canSave=c=>synced&&!c.querySelector('.bad'); /* mentés csak sikeres szinkronizálás után */
 const st=(t,k)=>{const s=$('status');s.className='status '+(k||'');s.innerHTML=`<svg class="i ${k?'':'spin'}"><use href="#i-${k==='ok'?'check':k==='err'?'alert':'ref'}"/></svg> ${t}`};
 
 const R={h:['mic','Hangosító','dl-h','Hangtechnikusok'],v:['mon','Vetítő','dl-v','Vetítősök']};
-const fld=(id,iso,lab,ic,dl)=>`<label class="f"><span class="lb">${ico(ic)} ${lab}</span><span class="er">Nem található ilyen nevű személy</span><span class="ib"><input id="${id}-${iso}" placeholder="Név..." autocomplete="off" list="${dl}" oninput="chg('${iso}',this)" onchange="fix(this)"><button type="button" class="x" tabindex="-1" onclick="clr(this)" aria-label="Törlés">${ico('x')}</button></span></label>`;
+const fld=(id,iso,lab,ic,dl)=>`<label class="f"><span class="lb">${ico(ic)} ${lab}</span><span class="er">Nem található ilyen nevű személy</span><span class="ib"><input id="${id}-${iso}" placeholder="Név..." autocomplete="off" onfocus="nsOpen(this,1)" onclick="nsOpen(this,1)" oninput="chg('${iso}',this);nsOpen(this)" onblur="nsClose()" onchange="fix(this)"><button type="button" class="x" tabindex="-1" onclick="clr(this)" aria-label="Törlés">${ico('x')}</button></span></label>`;
 
 /* ===== Esemény: a megjegyzés cella elején tárolva, 【Esemény: Név】 jelöléssel ===== */
 const EV_RE=/^\s*【Esemény:\s*([^】]*?)\s*】[\s,]*/;
@@ -252,17 +291,52 @@ function autoNote(c,el){
 function clr(b){const i=b.previousElementSibling;i.value='';i.dispatchEvent(new Event('input',{bubbles:true}))}
 
 function setNames(d){
-  names.h=d.hangLista||[];names.v=d.vetitoLista||[];namesOk=names.h.length+names.v.length>0;
+  KEZI=new Set((d.kezi||[]).map(n=>String(n).toLowerCase()));
+  const add=l=>{const o=l.slice();(d.kezi||[]).forEach(n=>{if(!o.some(x=>x.toLowerCase()===String(n).toLowerCase()))o.push(n)});return o};
+  names.h=add(d.hangLista||[]);names.v=add(d.vetitoLista||[]);namesOk=names.h.length+names.v.length>0;
   $('dl-h').innerHTML=names.h.map(n=>`<option value="${esc(n)}">`).join('');
   $('dl-v').innerHTML=names.v.map(n=>`<option value="${esc(n)}">`).join('');
   document.querySelectorAll('.card input').forEach(e=>{if(e.value)ok(e)});
   document.querySelectorAll('.card.dirty').forEach(c=>$('s-'+c.dataset.iso).disabled=!canSave(c));
 }
+/* ===== Névjavaslat: legutóbbi beosztás dátuma + színes buborék, a legrégebben beosztott van legfelül ===== */
+const DAYMS=864e5,isoD=t=>{const a=t.split('-').map(Number);return new Date(a[0],a[1]-1,a[2],12)};
+function lastMap(skip){ /* név -> a fő beosztásainak dátumai (az adott sor nélkül), mentetlen szerkesztésekkel együtt */
+  const m={},seen=new Set(),put=(n,iso)=>{n=String(n==null?'':n).trim().toLowerCase();if(n)(m[n]||(m[n]=[])).push(iso)};
+  document.querySelectorAll('.card').forEach(c=>{const iso=c.dataset.iso;seen.add(iso);if(iso===skip)return;put($('h1-'+iso).value,iso);put($('v1-'+iso).value,iso)});
+  SHEET.forEach((r,i)=>{if(!i)return;const iso=String(r[0]);if(!/^\d{4}-\d\d-\d\d$/.test(iso)||seen.has(iso)||iso===skip)return;put(r[1],iso);put(r[3],iso)});
+  return m}
+/* a megadott sor dátumához legközelebbi beosztás (előtte VAGY utána) */
+function nearest(arr,ref){let best=null,bd=1e9;(arr||[]).forEach(iso=>{const d=Math.round((isoD(iso)-ref)/DAYMS),a=Math.abs(d);if(a<bd||(a===bd&&d<0)){bd=a;best=iso}});return best?{iso:best,d:Math.round((isoD(best)-ref)/DAYMS)}:null}
+function dbub(x){
+  const a=Math.abs(x.d),k=a<=7?'r':a<=14?'o':a<=21?'y':a<=28?'g':'b',w=Math.floor(a/7),
+    rel=x.d<0?(a<7?a+' napja':w+' hete'):(a<7?a+' nap múlva':w+' hét múlva'),
+    dt=isoD(x.iso).toLocaleDateString('hu-HU',{year:'numeric',month:'2-digit',day:'2-digit'});
+  return `<span class="db ${k}">${dt}<small>${rel}</small></span>`}
+function nsOpen(inp,all){
+  nsInp=inp;const box=$('nsug'),c=inp.closest('.card'),iso=c.dataset.iso,p=inp.id[0],q=all?'':inp.value.trim().toLowerCase();
+  const busy=['h1','h2','v1','v2'].filter(k=>`${k}-${iso}`!==inp.id).map(k=>$(`${k}-${iso}`).value.trim().toLowerCase()).filter(Boolean),last=lastMap(iso),ref=isoD(iso);
+  const it=(names[p]||[]).filter(n=>{const k=n.toLowerCase();return !busy.includes(k)&&(!q||k.includes(q))}).map(n=>{const x=nearest(last[n.toLowerCase()],ref);return {n,x,a:x?Math.abs(x.d):Infinity}});
+  it.sort((u,v)=>u.a===v.a?u.n.localeCompare(v.n,'hu'):v.a-u.a); /* legrégebben (legtávolabb) beosztott felül, soha nem beosztott legfelül */
+  box.innerHTML=it.map(o=>`<button type="button" class="si ns" data-v="${esc(o.n)}" onpointerdown="event.preventDefault()" onclick="nsPick(this)"><span class="nn${o.x?'':' nw'}">${esc(o.n)}${KEZI.has(o.n.toLowerCase())?' <small class="kz">kézi</small>':''}</span>${o.x?dbub(o.x):'<span class="db nv">még nem volt</span>'}</button>`).join('');
+  box.classList.toggle('on',it.length>0);box.scrollTop=0;nsPos()}
+function nsPos(){
+  const box=$('nsug');if(!nsInp||!box.classList.contains('on'))return;
+  const r=nsInp.getBoundingClientRect(),vv=window.visualViewport,vt=vv?vv.offsetTop:0,vb=vv?vv.offsetTop+vv.height:innerHeight,
+    below=vb-r.bottom-8,above=r.top-vt-8,up=below<190&&above>below,sp=Math.max(120,Math.min(300,up?above:below));
+  box.style.left=r.left+'px';box.style.width=r.width+'px';box.style.maxHeight=sp+'px';
+  if(up){box.style.top='auto';box.style.bottom=(innerHeight-r.top+4)+'px'}else{box.style.bottom='auto';box.style.top=(r.bottom+4)+'px'}}
+function nsClose(){$('nsug').classList.remove('on');nsInp=null}
+function nsPick(b){const inp=nsInp;if(!inp)return;const iso=inp.closest('.card').dataset.iso;inp.value=b.dataset.v;chg(iso,inp);nsClose();inp.blur()}
+addEventListener('scroll',nsPos,{passive:true});addEventListener('resize',nsPos);
+if(window.visualViewport){visualViewport.addEventListener('resize',nsPos);visualViewport.addEventListener('scroll',nsPos)}
+
 async function loadNames(){
   try{const r=await fetch(scriptURL+'?action=getAutoBeosztas'),d=await r.json();setNames(d);try{localStorage.setItem(NK,JSON.stringify(d))}catch(e){}return d}catch(e){}
 }
 
 function apply(data){
+  if(Array.isArray(data))SHEET=data;
   data.forEach((row,idx)=>{
     if(!idx)return;const d=row[0],c=$('row-'+d);if(!c||c.classList.contains('dirty'))return;
     ['h1','h2','v1','v2','m'].forEach((p,j)=>{const e=$(`${p}-${d}`);e.value=row[j+1]||'';if(p!=='m')e.dataset.base=String(row[j+1]||'').trim()});c._a={};{const pm=parseM(row[5]),ev=String(row[6]==null?'':row[6]).trim()||pm.ev;$('m-'+d).value=pm.note;$('e-'+d).value=ev;c.toggleAttribute('data-ev',!!ev)}
@@ -280,7 +354,7 @@ async function loadData(){
 
 async function autoFill(b,iso,p){
   b.disabled=true;b.innerHTML=`${ico('ref').replace('class="i"','class="i spin"')} ...`;
-  const d=await loadNames()||{hangLista:names.h,vetitoLista:names.v},lista=(p==='h'?d.hangLista:d.vetitoLista)||[];
+  const d=await loadNames()||{hangLista:names.h.filter(n=>!KEZI.has(n.toLowerCase())),vetitoLista:names.v.filter(n=>!KEZI.has(n.toLowerCase()))},lista=(p==='h'?d.hangLista:d.vetitoLista)||[];
   const done=()=>{b.disabled=false;b.innerHTML=`${ico('wand')} Automata beosztás`};
   if(!lista.length){alert('Hiba az auto-kitöltésnél!');done();return}
   const busy=['h1','h2','v1','v2'].map(k=>$(`${k}-${iso}`).value).filter(Boolean),t=[];
@@ -335,7 +409,28 @@ function showView(){const on=location.hash==='#beallitasok';document.body.classL
 function openSettings(){if(document.body.classList.contains('v-set'))return;sy=scrollY;history.pushState({s:1},'','#beallitasok');showView()}
 function goBack(){if(location.hash==='#beallitasok')history.back();else{history.replaceState(null,'',location.pathname+location.search);showView()}}
 addEventListener('popstate',showView);
-function renderSettings(){if(!PEOPLE.length)loadPeople()}
+function srvMsg(t,k){const m=$('srv-msg');m.className='smsg '+(k||'');m.textContent=t||''}
+function renderSrv(){$('srv-cur').textContent=scriptURL;$('srv-src').textContent=URL_SRC}
+async function srvSave(){
+  const v=$('srv-in').value.trim(),f=$('srv-f');f.classList.remove('bad');
+  if(!v)return;
+  if(!URL_RE.test(v)||v.match(URL_RE)[0]!==v){f.classList.add('bad');return}
+  const b=$('srv-b');b.disabled=true;b.innerHTML=SP+' Tesztelés...';srvMsg('');
+  try{const r=await fetch(v+'?action=ping'),p=await r.json();
+    if(!p||!p.ok)throw 0;
+    let pub='';
+    try{const j=await (await fetch(v,{method:'POST',body:JSON.stringify({action:'setApiUrl',url:v})})).json();
+      if(j.ok)pub='A Google Táblázatba is beírtam (Beallitas lap), a civil oldal onnan veszi át.';
+      else if(j.nemEgyezik){srvMsg('A szerver saját URL-je más: '+j.szerver+' – kérlek ezt add meg ide, így kerül be helyesen a táblázatba.','err');b.disabled=false;b.innerHTML=ico('check')+' Tesztelés és mentés';return}
+      else pub='A táblázatba írás nem sikerült: '+(j.error||'ismeretlen hiba')}
+    catch(e){pub='A táblázatba írás nem sikerült (frissítetted a szkriptet a legújabb verzióra?).'}
+    try{localStorage.setItem(UK,v);[CK,NK].forEach(k=>localStorage.removeItem(k))}catch(e){}
+    srvMsg('Mentve ezen az eszközön. '+pub+' Újratöltés...','ok');setTimeout(()=>location.reload(),2500);return}
+  catch(e){srvMsg('Az URL nem válaszolt megfelelően. Ellenőrizd, hogy az új üzembe helyezés elérhető (Bárki) és a szkript friss verziójú!','err')}
+  b.disabled=false;b.innerHTML=ico('check')+' Tesztelés és mentés';
+}
+function srvReset(){if(!confirm('Visszaállítod a beépített / táblázatból érkező URL használatát ezen az eszközön?'))return;try{localStorage.removeItem(UK)}catch(e){}location.reload()}
+function renderSettings(){renderSrv();if(!PEOPLE.length)loadPeople()}
 async function loadPeople(){
   pmsg('Betöltés...');
   try{const r=await api({action:'adminLista'});
@@ -347,32 +442,35 @@ const pcard=(p,i)=>{const nw=i<0;
   return `<article class="pcard${nw?' new':''}" data-i="${i}"><div class="pch"><span class="av">${ico(nw?'plus':'user')}</span><b>${nw?'Új személy hozzáadása':esc(p.nev)}</b><span class="pill">Nem mentett</span></div>
 <label class="f"><span class="lb">${ico('user')} Név</span><span class="er">A név nem lehet üres</span><span class="ib"><input class="pn" placeholder="Név" autocomplete="off" value="${esc(p.nev)}" oninput="pChg(this)"></span></label>
 <label class="f"><span class="lb">${ico('mail')} E-mail cím</span><span class="er">Az e-mail címnek tartalmaznia kell a @ karaktert</span><span class="ib"><input class="pe" type="email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="${nw?'pelda@email.hu (üresen is hagyható)':'Nincs megadva – első belépéskor ő adja meg'}" value="${esc(p.email)}" oninput="pChg(this)"></span></label>
-<div class="roles"><label class="chk"><input type="checkbox" class="ph"${p.h?' checked':''} onchange="pChg(this)">${ico('mic')} Hangosító</label><label class="chk"><input type="checkbox" class="pv"${p.v?' checked':''} onchange="pChg(this)">${ico('mon')} Vetítő</label></div>
+<div class="roles"><label class="chk"><input type="checkbox" class="ph"${p.h?' checked':''} onchange="pChg(this)">${ico('mic')} Hangosító</label><label class="chk"><input type="checkbox" class="pv"${p.v?' checked':''} onchange="pChg(this)">${ico('mon')} Vetítő</label><label class="chk"><input type="checkbox" class="pk"${p.k?' checked':''} onchange="pChg(this)">${ico('user')} Csak kézi</label></div>
 <div class="pcb"><button class="save" disabled onclick="pSave(this)">${ico(nw?'plus':'save')} ${nw?'Hozzáadás':'Mentés'}</button>${nw?'':`<button class="dbtn" onclick="pDel(this)">${ico('trash')} Törlés</button>`}</div></article>`};
 function renderPeople(){
   const keep={};document.querySelectorAll('#plist .pcard.dirty').forEach(c=>{const o=PEOPLE[+c.dataset.i];if(o)keep[o.nev]=pRead(c)});
   const nw=$('pnew'),hadNew=nw.querySelector('.pcard.dirty')?pRead(nw.firstElementChild):null;
-  nw.innerHTML=pcard({nev:'',email:'',h:false,v:false},-1);
-  if(hadNew){const c=nw.firstElementChild;c.querySelector('.pn').value=hadNew.nev;c.querySelector('.pe').value=hadNew.email;c.querySelector('.ph').checked=hadNew.h;c.querySelector('.pv').checked=hadNew.v;pChg(c.querySelector('.pn'))}
+  nw.innerHTML=pcard({nev:'',email:'',h:false,v:false,k:false},-1);
+  if(hadNew){const c=nw.firstElementChild;c.querySelector('.pn').value=hadNew.nev;c.querySelector('.pe').value=hadNew.email;c.querySelector('.ph').checked=hadNew.h;c.querySelector('.pv').checked=hadNew.v;c.querySelector('.pk').checked=hadNew.k;pChg(c.querySelector('.pn'))}
   $('plist').innerHTML=PEOPLE.map(pcard).join('');
   $('pcount').textContent=PEOPLE.length+' személy';
   document.querySelectorAll('#plist .pcard').forEach(c=>{const k=keep[PEOPLE[+c.dataset.i].nev];if(!k)return;
-    c.querySelector('.pn').value=k.nev;c.querySelector('.pe').value=k.email;c.querySelector('.ph').checked=k.h;c.querySelector('.pv').checked=k.v;pChg(c.querySelector('.pn'))});
+    c.querySelector('.pn').value=k.nev;c.querySelector('.pe').value=k.email;c.querySelector('.ph').checked=k.h;c.querySelector('.pv').checked=k.v;c.querySelector('.pk').checked=k.k;pChg(c.querySelector('.pn'))});
 }
-const pRead=c=>({nev:c.querySelector('.pn').value.trim(),email:c.querySelector('.pe').value.trim(),h:c.querySelector('.ph').checked,v:c.querySelector('.pv').checked});
+const pRead=c=>({nev:c.querySelector('.pn').value.trim(),email:c.querySelector('.pe').value.trim(),h:c.querySelector('.ph').checked,v:c.querySelector('.pv').checked,k:c.querySelector('.pk').checked});
 function pChg(el){
-  const c=el.closest('.pcard'),i=+c.dataset.i,n=pRead(c),o=i<0?{nev:'',email:'',h:false,v:false}:PEOPLE[i];
-  const nBad=!n.nev,eBad=!!n.email&&!mailOk(n.email),rBad=!n.h&&!n.v;
+  const c=el.closest('.pcard'),i=+c.dataset.i;
+  if(el.classList.contains('pk')&&el.checked){c.querySelector('.ph').checked=false;c.querySelector('.pv').checked=false}
+  else if((el.classList.contains('ph')||el.classList.contains('pv'))&&el.checked)c.querySelector('.pk').checked=false;
+  const n=pRead(c),o=i<0?{nev:'',email:'',h:false,v:false,k:false}:PEOPLE[i];
+  const nBad=!n.nev,eBad=!!n.email&&!mailOk(n.email),rBad=!n.h&&!n.v&&!n.k;
   const nf=c.querySelector('.pn').closest('.f'),ef=c.querySelector('.pe').closest('.f');
   nf.classList.toggle('bad',nBad&&i>=0);ef.classList.toggle('bad',eBad);
-  const ch=n.nev!==o.nev||n.email!==o.email||n.h!==o.h||n.v!==o.v;
+  const ch=n.nev!==o.nev||n.email!==o.email||n.h!==!!o.h||n.v!==!!o.v||n.k!==!!o.k;
   c.classList.toggle('dirty',ch&&(i>=0||!!n.nev));
   c.querySelector('.save').disabled=!(ch&&!nBad&&!eBad&&!rBad);
 }
 async function pSave(btn){
   const c=btn.closest('.pcard'),i=+c.dataset.i,n=pRead(c),nw=i<0,old=nw?'':PEOPLE[i].nev;
   btn.disabled=true;btn.innerHTML=SP+' Mentés...';pmsg('');
-  try{const r=await api({action:'adminMent',regiNev:old,nev:n.nev,email:n.email,h:n.h,v:n.v});
+  try{const r=await api({action:'adminMent',regiNev:old,nev:n.nev,email:n.email,h:n.h,v:n.v,k:n.k});
     if(!r.ok){pmsg(r.error||'Hiba a mentés során!','err');btn.innerHTML=ico(nw?'plus':'save')+(nw?' Hozzáadás':' Mentés');pChg(c.querySelector('.pn'));return}
     c.classList.remove('dirty');
     pmsg(nw?n.nev+' hozzáadva.':'Mentve: '+n.nev,'ok');
@@ -397,10 +495,11 @@ addEventListener('beforeunload',e=>{if(document.querySelector('.pcard.dirty')){e
 const day0=ymd(new Date());
 const chk=()=>{if(ymd(new Date())!==day0&&!document.querySelector('.card.dirty,.pcard.dirty'))location.reload()};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)chk()});setInterval(chk,60000);
-window.onload=()=>{
+window.onload=async()=>{
   build();{const t0=document.querySelector('.card.tdy.wkday');if(t0)regroup(t0)}st('Szinkronizálás... Kérlek várj!');
   try{const n=JSON.parse(localStorage.getItem(NK)||'null');if(n)setNames(n)}catch(e){}
   setTimeout(scrollToToday,300);
+  await syncUrl();renderSrv();
   loadNames();loadData();showView();
 };
 </script>
